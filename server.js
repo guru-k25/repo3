@@ -9,7 +9,7 @@ app.use(cors());
 
 // 1. DATABASE CONNECTION
 // PASTE YOUR MONGODB STRING BELOW inside the quotes
-mongoose.connect('mongodb+srv://admin:kmzYcx0j5TVZeAkp@cluster0.mongodb.net/?retryWrites=true&w=majority')
+mongoose.connect('mongodb+srv://gurukrishnakumar123_db_user:kmzYcx0j5TVZeAkp@cluster0.j4ltzrz.mongodb.net/?appName=Cluster0')
     .then(() => console.log("Database Connected"))
     .catch(err => console.error(err));
 
