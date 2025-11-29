@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QuickNotes - Simple & Fast</title>
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <style>
         :root {
             --primary: #6c5ce7;
@@ -205,95 +206,158 @@
     </div>
 
     <script>
-        // --- DATA & STATE ---
-        let notes = JSON.parse(localStorage.getItem('myNotes')) || [];
-        let isPremium = localStorage.getItem('isPremium') === 'true';
-        
-        const MAX_FREE_NOTES = 5;
+        // --- CONFIGURATION ---
+    // Change this to your live URL later. For now, it is your local server.
+    const API_URL = 'http://localhost:3000/api'; 
+    
+    // --- STATE ---
+    let userEmail = localStorage.getItem('userEmail');
+    let notes = [];
+    let isPremium = false;
+    const MAX_FREE_NOTES = 5;
 
-        // --- DOM ELEMENTS ---
-        const noteInput = document.getElementById('note-input');
-        const notesContainer = document.getElementById('notes-container');
-        const countSpan = document.getElementById('current-count');
-        const maxSpan = document.getElementById('max-count');
-        const modal = document.getElementById('paywall-modal');
-        const statusBadge = document.getElementById('status-badge');
+    // --- DOM ELEMENTS ---
+    const noteInput = document.getElementById('note-input');
+    const notesContainer = document.getElementById('notes-container');
+    const countSpan = document.getElementById('current-count');
+    const maxSpan = document.getElementById('max-count');
+    const modal = document.getElementById('paywall-modal');
+    const statusBadge = document.getElementById('status-badge');
 
-        // --- INITIAL RENDER ---
-        updateUI();
+    // --- STARTUP LOGIC ---
+    // 1. Ask for email if we don't have it (Simple Login)
+    if (!userEmail) {
+        userEmail = prompt("Please enter your email to save your notes:");
+        if (userEmail) {
+            localStorage.setItem('userEmail', userEmail);
+            fetchUserData();
+        } else {
+            alert("We need an email to save your notes!");
+        }
+    } else {
+        fetchUserData();
+    }
 
-        // --- FUNCTIONS ---
-
-        function updateUI() {
-            // Update Status Badge
-            if (isPremium) {
-                statusBadge.textContent = "Premium User 🏆";
-                statusBadge.classList.add('premium-badge');
-                maxSpan.textContent = "∞";
-            } else {
-                statusBadge.textContent = "Free Plan";
-                statusBadge.classList.remove('premium-badge');
-                maxSpan.textContent = MAX_FREE_NOTES;
-            }
-
-            // Update Count
-            countSpan.textContent = notes.length;
-
-            // Render Notes
-            notesContainer.innerHTML = '';
-            notes.forEach((note, index) => {
-                const noteEl = document.createElement('div');
-                noteEl.className = 'note-card';
-                noteEl.innerHTML = `
-                    <p>${note}</p>
-                    <button class="delete-btn" onclick="deleteNote(${index})">&times;</button>
-                `;
-                notesContainer.appendChild(noteEl);
+    // 2. Fetch User Data from Server
+    async function fetchUserData() {
+        try {
+            const res = await fetch(`${API_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: userEmail })
             });
+            const user = await res.json();
+            
+            // Update our local variables with Server data
+            notes = user.notes;
+            isPremium = user.isPremium;
+            updateUI();
+        } catch (error) {
+            console.error("Error connecting to server:", error);
+            alert("Could not connect to the server. Is it running?");
+        }
+    }
 
-            // Save to Storage
-            localStorage.setItem('myNotes', JSON.stringify(notes));
-            localStorage.setItem('isPremium', isPremium);
+    // --- UI UPDATES ---
+    function updateUI() {
+        // Badge Logic
+        if (isPremium) {
+            statusBadge.textContent = "Premium User 🏆";
+            statusBadge.classList.add('premium-badge');
+            maxSpan.textContent = "∞";
+        } else {
+            statusBadge.textContent = "Free Plan";
+            statusBadge.classList.remove('premium-badge');
+            maxSpan.textContent = MAX_FREE_NOTES;
         }
 
-        // Add Note Logic
-        document.getElementById('add-btn').addEventListener('click', () => {
-            const text = noteInput.value.trim();
-            if (!text) return;
+        // Count Logic
+        countSpan.textContent = notes.length;
 
-            // CHECK LIMIT HERE
-            if (!isPremium && notes.length >= MAX_FREE_NOTES) {
-                openModal();
-                return;
-            }
+        // Render Notes
+        notesContainer.innerHTML = '';
+        notes.forEach((note) => {
+            const noteEl = document.createElement('div');
+            noteEl.className = 'note-card';
+            noteEl.innerHTML = `<p>${note}</p>`;
+            // Note: Delete button logic requires 'Delete' API, skipped for simplicity
+            notesContainer.appendChild(noteEl);
+        });
+    }
 
-            notes.unshift(text); // Add to top
-            noteInput.value = '';
-            updateUI();
+    // --- ADD NOTE LOGIC ---
+    document.getElementById('add-btn').addEventListener('click', async () => {
+        const text = noteInput.value.trim();
+        if (!text) return;
+
+        // Optimistic check (check locally first to be fast)
+        if (!isPremium && notes.length >= MAX_FREE_NOTES) {
+            openModal();
+            return;
+        }
+
+        // Send to Server
+        const res = await fetch(`${API_URL}/add-note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: userEmail, note: text })
         });
 
-        // Delete Note
-        window.deleteNote = (index) => {
-            if(confirm("Delete this note?")) {
-                notes.splice(index, 1);
+        const data = await res.json();
+
+        if (data.error) {
+            // If server rejects us (e.g. limit reached), show modal
+            openModal();
+        } else {
+            // Success! Update list
+            notes = data.notes;
+            noteInput.value = '';
+            updateUI();
+        }
+    });
+
+    // --- PAYMENT LOGIC (RAZORPAY) ---
+    async function upgrade(planType) {
+        const amount = planType === 'monthly' ? 10 : 100;
+
+        // 1. Create Order on Server
+        const res = await fetch(`${API_URL}/create-order`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: amount })
+        });
+        const order = await res.json();
+
+        // 2. Open Razorpay Window
+        const options = {
+            "key": "YOUR_RAZORPAY_KEY_ID_HERE", // <--- PASTE YOUR KEY ID HERE
+            "amount": order.amount,
+            "currency": "INR",
+            "name": "QuickNotes Premium",
+            "description": "Upgrade to Unlimited Notes",
+            "order_id": order.id, 
+            "handler": async function (response) {
+                // 3. Payment Success! Tell Server to upgrade user.
+                await fetch(`${API_URL}/verify-payment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: userEmail })
+                });
+                
+                alert("Payment Successful! You are now Premium.");
+                isPremium = true;
+                closeModal();
                 updateUI();
             }
         };
 
-        // Upgrade Logic (Simulation)
-        window.upgrade = (plan) => {
-            // In a real app, this is where you would call the Razorpay/Stripe API
-            alert(`Simulating payment for ${plan} plan... Payment Successful!`);
-            isPremium = true;
-            closeModal();
-            updateUI();
-            alert("Welcome to Premium! You can now add unlimited notes.");
-        };
+        const rzp1 = new Razorpay(options);
+        rzp1.open();
+    }
 
-        // Modal Controls
-        function openModal() { modal.style.display = 'flex'; }
-        window.closeModal = () => { modal.style.display = 'none'; }
-
+    // Modal Helpers
+    function openModal() { modal.style.display = 'flex'; }
+    window.closeModal = () => { modal.style.display = 'none'; }
     </script>
 </body>
 </html>
