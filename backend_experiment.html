@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickNotes - Simple & Fast</title>
+    <style>
+        :root {
+            --primary: #6c5ce7;
+            --bg: #f4f7f6;
+            --note-bg: #ffffff;
+            --text: #2d3436;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        header {
+            width: 100%;
+            background: white;
+            padding: 1rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; }
+        .status-badge {
+            background: #dfe6e9;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin-top: 5px;
+            display: inline-block;
+        }
+        .premium-badge { background: #ffd700; color: #000; font-weight: bold; }
+
+        /* Input Area */
+        .input-area {
+            width: 90%;
+            max-width: 600px;
+            margin-top: 2rem;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 10px;
+            border: 2px solid #dfe6e9;
+            border-radius: 8px;
+            resize: none;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+
+        button#add-btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 10px;
+            width: 100%;
+            transition: transform 0.1s;
+        }
+
+        button#add-btn:active { transform: scale(0.98); }
+
+        /* Note Count Bar */
+        .counter {
+            margin: 1rem 0;
+            font-size: 0.9rem;
+            color: #636e72;
+        }
+
+        /* Notes Grid */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            width: 90%;
+            max-width: 1000px;
+            padding-bottom: 50px;
+        }
+
+        .note-card {
+            background: var(--note-bg);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            position: relative;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: transparent;
+            border: none;
+            color: #ff7675;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Modal / Paywall */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .modal {
+            background: white;
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .plan-card {
+            border: 2px solid var(--primary);
+            padding: 1rem;
+            margin: 10px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .plan-card:hover { background: #f0f0ff; }
+
+        .price { font-size: 1.2rem; font-weight: bold; color: var(--primary); }
+        
+        .close-modal {
+            margin-top: 15px;
+            background: none;
+            border: none;
+            text-decoration: underline;
+            cursor: pointer;
+            color: #636e72;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>QuickNotes</h1>
+        <div id="status-badge" class="status-badge">Free Plan</div>
+    </header>
+
+    <div class="input-area">
+        <textarea id="note-input" placeholder="Write your note here..."></textarea>
+        <button id="add-btn">Add Note</button>
+    </div>
+
+    <div class="counter">
+        Using <span id="current-count">0</span> / <span id="max-count">5</span> notes
+    </div>
+
+    <div class="notes-grid" id="notes-container">
+        </div>
+
+    <div class="modal-overlay" id="paywall-modal">
+        <div class="modal">
+            <h2>Limit Reached! 🚀</h2>
+            <p>You have used your 5 free notes. To add more without deleting your memories, upgrade to Premium.</p>
+            
+            <div class="plan-card" onclick="upgrade('monthly')">
+                <h3>Monthly Plan</h3>
+                <div class="price">₹10 / month</div>
+            </div>
+
+            <div class="plan-card" onclick="upgrade('yearly')">
+                <h3>Yearly Saver</h3>
+                <div class="price">₹100 / year</div>
+            </div>
+
+            <button class="close-modal" onclick="closeModal()">I'll delete some notes instead</button>
+        </div>
+    </div>
+
+    <script>
+        // --- DATA & STATE ---
+        let notes = JSON.parse(localStorage.getItem('myNotes')) || [];
+        let isPremium = localStorage.getItem('isPremium') === 'true';
+        
+        const MAX_FREE_NOTES = 5;
+
+        // --- DOM ELEMENTS ---
+        const noteInput = document.getElementById('note-input');
+        const notesContainer = document.getElementById('notes-container');
+        const countSpan = document.getElementById('current-count');
+        const maxSpan = document.getElementById('max-count');
+        const modal = document.getElementById('paywall-modal');
+        const statusBadge = document.getElementById('status-badge');
+
+        // --- INITIAL RENDER ---
+        updateUI();
+
+        // --- FUNCTIONS ---
+
+        function updateUI() {
+            // Update Status Badge
+            if (isPremium) {
+                statusBadge.textContent = "Premium User 🏆";
+                statusBadge.classList.add('premium-badge');
+                maxSpan.textContent = "∞";
+            } else {
+                statusBadge.textContent = "Free Plan";
+                statusBadge.classList.remove('premium-badge');
+                maxSpan.textContent = MAX_FREE_NOTES;
+            }
+
+            // Update Count
+            countSpan.textContent = notes.length;
+
+            // Render Notes
+            notesContainer.innerHTML = '';
+            notes.forEach((note, index) => {
+                const noteEl = document.createElement('div');
+                noteEl.className = 'note-card';
+                noteEl.innerHTML = `
+                    <p>${note}</p>
+                    <button class="delete-btn" onclick="deleteNote(${index})">&times;</button>
+                `;
+                notesContainer.appendChild(noteEl);
+            });
+
+            // Save to Storage
+            localStorage.setItem('myNotes', JSON.stringify(notes));
+            localStorage.setItem('isPremium', isPremium);
+        }
+
+        // Add Note Logic
+        document.getElementById('add-btn').addEventListener('click', () => {
+            const text = noteInput.value.trim();
+            if (!text) return;
+
+            // CHECK LIMIT HERE
+            if (!isPremium && notes.length >= MAX_FREE_NOTES) {
+                openModal();
+                return;
+            }
+
+            notes.unshift(text); // Add to top
+            noteInput.value = '';
+            updateUI();
+        });
+
+        // Delete Note
+        window.deleteNote = (index) => {
+            if(confirm("Delete this note?")) {
+                notes.splice(index, 1);
+                updateUI();
+            }
+        };
+
+        // Upgrade Logic (Simulation)
+        window.upgrade = (plan) => {
+            // In a real app, this is where you would call the Razorpay/Stripe API
+            alert(`Simulating payment for ${plan} plan... Payment Successful!`);
+            isPremium = true;
+            closeModal();
+            updateUI();
+            alert("Welcome to Premium! You can now add unlimited notes.");
+        };
+
+        // Modal Controls
+        function openModal() { modal.style.display = 'flex'; }
+        window.closeModal = () => { modal.style.display = 'none'; }
+
+    </script>
+</body>
+</html>
